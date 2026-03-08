@@ -25,4 +25,6 @@ jobs:
         env:
           GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          FREE_USER: ${{ secrets.FREE_USER }}
+          FREE_KEY: ${{ secrets.FREE_KEY }}
         run: python check_rdv.py
