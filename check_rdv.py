@@ -1,6 +1,7 @@
 import requests
 import smtplib
 import os
+import urllib.parse
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
@@ -9,9 +10,12 @@ from datetime import datetime
 RECIPIENT_EMAIL = "raphaelrachidi3@gmail.com"
 SENDER_EMAIL = os.environ.get("GMAIL_ADDRESS")
 SENDER_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD")
+FREE_USER = os.environ.get("FREE_USER")
+FREE_KEY = os.environ.get("FREE_KEY")
 
-# URL officielle RDV préfecture Mayotte - renouvellement titre de séjour
-URL = "https://www.rdv-prefecture.interieur.gouv.fr/rdvpref/reservation/demarche/6860/creneau/"
+# ✅ URL correcte pour le RENOUVELLEMENT (6880) et non première demande (6860)
+URL = "https://www.rdv-prefecture.interieur.gouv.fr/rdvpref/reservation/demarche/6880/creneau/"
+URL_RESERVATION = "https://www.rdv-prefecture.interieur.gouv.fr/rdvpref/reservation/demarche/6880/cgu/"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -29,22 +33,31 @@ NO_SLOT_KEYWORDS = [
     "indisponible",
     "aucun rendez-vous disponible",
 ]
+
+
 def send_sms(message):
     """Envoie un SMS via l'API Free Mobile."""
-    user = os.getenv('FREE_USER')
-    key = os.getenv('FREE_KEY')
-    if user and key:
-        # On encode le message pour l'URL
-        import urllib.parse
+    if FREE_USER and FREE_KEY:
         msg_encoded = urllib.parse.quote(message)
-        url = f"https://smsapi.free-mobile.fr/sendmsg?user={user}&pass={key}&msg={msg_encoded}"
+        url = f"https://smsapi.free-mobile.fr/sendmsg?user={FREE_USER}&pass={FREE_KEY}&msg={msg_encoded}"
         try:
-            requests.get(url)
-            print("📱 SMS envoyé avec succès !")
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                print("📱 SMS envoyé avec succès !")
+            else:
+                print(f"⚠️ SMS : réponse inattendue ({response.status_code})")
         except Exception as e:
-            print(f"❌ Erreur envoi SMS : {e}")    
+            print(f"❌ Erreur envoi SMS : {e}")
+    else:
+        print("⚠️ SMS non envoyé : FREE_USER ou FREE_KEY manquant.")
+
+
 def send_alert_email(page_content_preview):
     """Envoie un email d'alerte quand un créneau est détecté."""
+    if not SENDER_EMAIL or not SENDER_PASSWORD:
+        print("❌ Email non envoyé : GMAIL_ADDRESS ou GMAIL_APP_PASSWORD manquant.")
+        return
+
     msg = MIMEMultipart("alternative")
     msg["Subject"] = "🚨 CRÉNEAU DISPONIBLE - Préfecture de Mayotte !"
     msg["From"] = SENDER_EMAIL
@@ -59,7 +72,7 @@ def send_alert_email(page_content_preview):
         
         <div style="background: #0a3d62; padding: 30px; text-align: center;">
           <h1 style="color: white; margin: 0; font-size: 24px;">🚨 CRÉNEAU DISPONIBLE !</h1>
-          <p style="color: rgba(255,255,255,0.8); margin: 8px 0 0;">Préfecture de Mayotte — Titre de séjour</p>
+          <p style="color: rgba(255,255,255,0.8); margin: 8px 0 0;">Préfecture de Mayotte — Renouvellement titre de séjour</p>
         </div>
 
         <div style="padding: 30px;">
@@ -69,12 +82,12 @@ def send_alert_email(page_content_preview):
             ⚡ <strong>Faites vite !</strong> Les créneaux partent en quelques secondes.
           </div>
 
-          <a href="{URL}" style="display: block; background: #e84855; color: white; text-align: center; padding: 18px; border-radius: 10px; text-decoration: none; font-size: 18px; font-weight: bold; margin: 20px 0;">
+          <a href="{URL_RESERVATION}" style="display: block; background: #e84855; color: white; text-align: center; padding: 18px; border-radius: 10px; text-decoration: none; font-size: 18px; font-weight: bold; margin: 20px 0;">
             👉 RÉSERVER MON CRÉNEAU MAINTENANT
           </a>
 
           <p style="font-size: 13px; color: #999; text-align: center;">
-            Détecté automatiquement par votre alerte RDV Préfecture de Mayotte
+            Détecté automatiquement par votre alerte RDV Préfecture de Mayotte — Renouvellement
           </p>
         </div>
       </div>
@@ -84,18 +97,21 @@ def send_alert_email(page_content_preview):
 
     msg.attach(MIMEText(html, "html"))
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-        server.login(SENDER_EMAIL, SENDER_PASSWORD)
-        server.sendmail(SENDER_EMAIL, RECIPIENT_EMAIL, msg.as_string())
-    
-    print(f"✅ Email d'alerte envoyé à {RECIPIENT_EMAIL} !")
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(SENDER_EMAIL, SENDER_PASSWORD)
+            server.sendmail(SENDER_EMAIL, RECIPIENT_EMAIL, msg.as_string())
+        print(f"✅ Email d'alerte envoyé à {RECIPIENT_EMAIL} !")
+    except Exception as e:
+        print(f"❌ Erreur envoi email : {e}")
+
 
 def check_availability():
     """Vérifie si un créneau est disponible sur le site de la préfecture."""
     try:
         response = requests.get(URL, headers=HEADERS, timeout=15)
         content = response.text.lower()
-        
+
         print(f"[{datetime.now().strftime('%H:%M:%S')}] Vérification... Status: {response.status_code}")
 
         # Si un des mots "pas de créneau" est trouvé → pas de dispo
@@ -107,11 +123,11 @@ def check_availability():
         # Si la page contient des éléments de sélection de créneau → dispo !
         slot_indicators = ["créneau", "choisir", "disponible", "réserver", "matin", "après-midi", "08:", "09:", "10:", "11:", "14:", "15:", "16:"]
         found = [kw for kw in slot_indicators if kw in content]
-        
+
         if found:
             print(f"✅ CRÉNEAU POTENTIELLEMENT DISPONIBLE ! (indicateurs: {found})")
             return True
-        
+
         print("⚠️ Page ambiguë, envoi d'alerte par précaution")
         return True
 
@@ -119,11 +135,14 @@ def check_availability():
         print(f"⚠️ Erreur réseau: {e}")
         return False
 
+
 if __name__ == "__main__":
-    print("🔍 Vérification des créneaux - Préfecture de Mayotte")
-    
+    print("🔍 Vérification des créneaux - Préfecture de Mayotte (Renouvellement)")
+
     if check_availability():
         print("📧 Envoi de l'email d'alerte...")
         send_alert_email("")
+        print("📱 Envoi du SMS d'alerte...")
+        send_sms("🚨 CRÉNEAU DISPO - Préfecture Mayotte (Renouvellement) ! Réservez vite : " + URL_RESERVATION)
     else:
         print("😴 Aucun créneau pour l'instant. Prochaine vérification dans 1 minute.")
