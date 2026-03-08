@@ -29,7 +29,20 @@ NO_SLOT_KEYWORDS = [
     "indisponible",
     "aucun rendez-vous disponible",
 ]
-
+def send_sms(message):
+    """Envoie un SMS via l'API Free Mobile."""
+    user = os.getenv('FREE_USER')
+    key = os.getenv('FREE_KEY')
+    if user and key:
+        # On encode le message pour l'URL
+        import urllib.parse
+        msg_encoded = urllib.parse.quote(message)
+        url = f"https://smsapi.free-mobile.fr/sendmsg?user={user}&pass={key}&msg={msg_encoded}"
+        try:
+            requests.get(url)
+            print("📱 SMS envoyé avec succès !")
+        except Exception as e:
+            print(f"❌ Erreur envoi SMS : {e}")    
 def send_alert_email(page_content_preview):
     """Envoie un email d'alerte quand un créneau est détecté."""
     msg = MIMEMultipart("alternative")
