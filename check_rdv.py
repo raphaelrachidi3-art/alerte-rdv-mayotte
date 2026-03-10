@@ -146,3 +146,4 @@ if __name__ == "__main__":
         send_sms("🚨 CRÉNEAU DISPO - Préfecture Mayotte (Renouvellement) ! Réservez vite : " + URL_RESERVATION)
     else:
         print("😴 Aucun créneau pour l'instant. Prochaine vérification dans 1 minute.")
+        
